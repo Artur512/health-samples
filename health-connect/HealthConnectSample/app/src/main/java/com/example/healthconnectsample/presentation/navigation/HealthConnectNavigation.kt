@@ -15,11 +15,13 @@
  */
 package com.example.healthconnectsample.presentation.navigation
 
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.material.ScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -44,6 +46,8 @@ import com.example.healthconnectsample.presentation.screen.privacypolicy.Privacy
 import com.example.healthconnectsample.presentation.screen.sleepsession.SleepSessionScreen
 import com.example.healthconnectsample.presentation.screen.sleepsession.SleepSessionViewModel
 import com.example.healthconnectsample.presentation.screen.sleepsession.SleepSessionViewModelFactory
+import com.example.healthconnectsample.presentation.screen.steps.StepsScreen
+import com.example.healthconnectsample.presentation.steps.StepsActivity
 import com.example.healthconnectsample.showExceptionSnackbar
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -253,5 +257,14 @@ fun HealthConnectNavigation(
                 permissionsLauncher.launch(values)
             }
         }
+
+        composable(Screen.StepsScreen.route){
+            val context = LocalContext.current
+            StepsScreen {
+                val myIntent = Intent(context, StepsActivity::class.java)
+                context.startActivity(myIntent)
+            }
+        }
+
     }
 }

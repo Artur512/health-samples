@@ -20,6 +20,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Resources.NotFoundException
 import android.os.Build
+import android.util.Log
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.runtime.mutableStateOf
 import androidx.health.connect.client.HealthConnectClient
@@ -36,6 +37,7 @@ import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.DataOrigin
+import androidx.health.connect.client.request.AggregateGroupByDurationRequest
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
@@ -46,9 +48,13 @@ import androidx.health.connect.client.units.Length
 import androidx.health.connect.client.units.Mass
 import androidx.health.connect.client.units.Velocity
 import com.example.healthconnectsample.R
+import com.example.healthconnectsample.data.steps.GoogleHealthEventsParser
+import com.example.healthconnectsample.data.steps.StepRecordResult
+import com.example.healthconnectsample.data.steps.TimeRangeSlicer
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import java.io.IOException
+import java.time.Duration
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
@@ -57,7 +63,8 @@ import kotlin.reflect.KClass
 
 // The minimum android level that can use Health Connect
 const val MIN_SUPPORTED_SDK = Build.VERSION_CODES.O_MR1
-
+const val MAX_NUMBER_OF_BUCKETS = 5000L
+const val DAYS_TO_SUBTRACT: Long = 7
 /**
  * Demonstrates reading and writing from Health Connect.
  */
@@ -425,6 +432,50 @@ class HealthConnectManager(private val context: Context) {
     /**
      * Creates a random sleep stage that spans the specified [start] to [end] time.
      */
+
+    suspend fun resyncSteps() {
+        val result = getAggregateSlicedSteps(Instant.now().minus(DAYS_TO_SUBTRACT, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS), Instant.now())
+        if (result.isNotEmpty()) {
+            result.map {
+                Log.d("StepRecordResult", "${it.startedAt} + ${it.endedAt} + ${it.quantity}")
+            }
+        }
+    }
+
+    private suspend fun getAggregateSlicedSteps(start: Instant, end: Instant): List<StepRecordResult> {
+        val totals = mutableListOf<StepRecordResult>()
+        val sessions = getExercisesSessions(start, end)
+        val chronoUnit = ChronoUnit.MINUTES
+        val aggregationResultGroupedByDurations = TimeRangeSlicer.splitTimeRangeByInterval(start, end, MAX_NUMBER_OF_BUCKETS, chronoUnit).map {
+            healthConnectClient.aggregateGroupByDuration(
+                AggregateGroupByDurationRequest(
+                    metrics = setOf(StepsRecord.COUNT_TOTAL),
+                    timeRangeFilter = TimeRangeFilter.between(it.first, it.second),
+                    timeRangeSlicer = Duration.of(1, chronoUnit)
+                )
+            )
+        }.flatten()
+        totals.addAll(GoogleHealthEventsParser.getExerciseEventInputs(aggregationResultGroupedByDurations))
+        return totals
+    }
+
+    private suspend fun getExercisesSessions(start: Instant, end: Instant): List<ExerciseSessionRecord> {
+        val totals = mutableListOf<ExerciseSessionRecord>()
+        var token: String? = null
+        do {
+            val request = ReadRecordsRequest(
+                recordType = ExerciseSessionRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(start, end),
+                pageToken = token
+            )
+            val response = healthConnectClient.readRecords(request)
+            totals.addAll(response.records)
+            token = response.pageToken
+        } while (token?.isNotEmpty() == true)
+        return totals
+    }
+
+
     private fun generateSleepStages(
         start: ZonedDateTime,
         end: ZonedDateTime
